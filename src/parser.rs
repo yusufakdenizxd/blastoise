@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use anyhow::{anyhow, Result};
 use whoami;
 
@@ -6,13 +8,14 @@ use crate::env::Env;
 #[derive(Clone, Debug)]
 pub enum Command {
     Empty,
+    Clear,
     Exit,
-    Echo(String),
-    Ls,
+    Echo(Vec<String>),
+    Ls(Vec<String>),
     Pwd,
     Cd(Option<String>),
     Touch(Vec<String>),
-    Rm(Vec<String>),
+    Rm(Vec<String>, Vec<String>),
     Cat(String),
     Whoami,
 }
@@ -25,7 +28,15 @@ impl Command {
             }
 
             Command::Echo(value) => {
-                println!("{}", value);
+                println!("{}", value.join(" "));
+                Ok(())
+            }
+
+            Command::Clear => {
+                //Moves cursor to 1:1 and clear screen
+                print!("{}[2J{}[1;1H", 27 as char, 27 as char);
+                //Sends escape sequence immediately
+                std::io::stdout().flush()?;
                 Ok(())
             }
 
@@ -49,8 +60,9 @@ impl Command {
                 Ok(())
             }
 
-            Command::Ls => {
+            Command::Ls(flags) => {
                 let files = env.dirpath.read_dir();
+
                 match files {
                     Ok(files) => {
                         for file in files {
@@ -63,7 +75,17 @@ impl Command {
                 }
             }
 
-            Command::Rm(files) => {
+            Command::Rm(files, flags) => {
+                let mut recursive: bool = false;
+                for flag in flags {
+                    match flag.as_str() {
+                        "-f" => recursive = true,
+                        _ => {
+                            println!("Invalid Flag: {}", flag);
+                        }
+                    }
+                }
+
                 for file in files {
                     let mut path = env.dirpath.clone();
                     path.push(file);
@@ -71,7 +93,11 @@ impl Command {
                         if path.is_file() {
                             let _ = std::fs::remove_file(path);
                         } else if path.is_dir() {
-                            return Err(anyhow!("{} is a Folder", file));
+                            if recursive {
+                                let _ = std::fs::remove_dir_all(path);
+                            } else {
+                                return Err(anyhow!("rm: {}: is a directory", file));
+                            }
                         }
                     } else {
                         return Err(anyhow!("{} file not exist ", file));
@@ -94,6 +120,19 @@ impl Command {
 
                     let _ = std::fs::write(&path, "");
                 }
+
+                Ok(())
+            }
+
+            Command::Mkdir(folder_name) => {
+                let mut path = env.dirpath.clone();
+                path.push(folder_name);
+
+                if path.is_dir() {
+                    return Err(anyhow!("mkdir: {}: already exist", folder_name));
+                }
+
+                let _ = std::fs::create_dir_all(path);
 
                 Ok(())
             }
@@ -133,48 +172,64 @@ impl Parser {
     }
 
     pub fn parse(&self) -> Result<Command> {
-        let args: Vec<String> = self.input.split_whitespace().map(String::from).collect();
-        if args.len() == 0 {
+        let i: Vec<String> = self.input.split_whitespace().map(String::from).collect();
+        if i.len() == 0 {
             return Ok(Command::Empty);
         }
+        let mut flags = Vec::new();
 
-        match args[0].as_str() {
+        let mut args = Vec::new();
+
+        let command = i[0].clone();
+
+        for arg in i.into_iter().skip(1) {
+            if arg.starts_with('-') {
+                flags.push(arg);
+            } else {
+                args.push(arg);
+            }
+        }
+
+        let flags: Vec<String> = vec![];
+
+        match command.as_str() {
             "exit" => Ok(Command::Exit),
-            "ls" => Ok(Command::Ls),
+            "clear" => Ok(Command::Clear),
+            "ls" => Ok(Command::Ls(flags)),
             "whoami" => Ok(Command::Whoami),
             "pwd" => Ok(Command::Pwd),
             "cd" => {
-                if args.len() == 1 {
+                if args.len() == 0 {
                     return Ok(Command::Cd(None));
-                } else if args.len() == 2 {
-                    return Ok(Command::Cd(Some(args[1].clone())));
+                } else if args.len() == 1 {
+                    return Ok(Command::Cd(Some(args[0].clone())));
                 }
                 Err(anyhow!("cd command requires an argument"))
             }
             "echo" => {
-                if args.len() > 1 {
-                    Ok(Command::Echo(args[1..].join(" ")))
+                if args.len() >= 1 {
+                    Ok(Command::Echo(args))
                 } else {
                     Err(anyhow!("echo command requires an argument"))
                 }
             }
             "rm" => {
-                if args.len() > 1 {
-                    Ok(Command::Rm(args.into_iter().skip(1).collect()))
+                if args.len() >= 1 {
+                    Ok(Command::Rm(args, flags))
                 } else {
                     Err(anyhow!("rm command requires an argument"))
                 }
             }
             "touch" => {
                 if args.len() > 1 {
-                    Ok(Command::Touch(args.into_iter().skip(1).collect()))
+                    Ok(Command::Touch(args))
                 } else {
                     Err(anyhow!("touch command requires an argument"))
                 }
             }
             "cat" => {
-                if args.len() == 2 {
-                    Ok(Command::Cat(String::from(args[1].clone())))
+                if args.len() == 1 {
+                    Ok(Command::Cat(args[0].clone()))
                 } else {
                     Err(anyhow!("cat command requires a file name"))
                 }
