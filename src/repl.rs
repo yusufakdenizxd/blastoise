@@ -18,7 +18,7 @@ pub fn run() {
             Ok(a) => {
                 let result = a.execute(&mut env);
                 if let Err(e) = result {
-                    println!("An Error Occured {:?}", e);
+                    println!("{:?}", e);
                 }
             }
             Err(e) => println!("{:?}", e),
