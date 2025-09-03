@@ -13,6 +13,7 @@ pub enum Command {
     Echo(Vec<String>),
     Ls(Vec<String>),
     Pwd,
+    Mkdir(String),
     Cd(Option<String>),
     Touch(Vec<String>),
     Rm(Vec<String>, Vec<String>),
@@ -205,6 +206,14 @@ impl Parser {
                     return Ok(Command::Cd(Some(args[0].clone())));
                 }
                 Err(anyhow!("cd command requires an argument"))
+            }
+
+            "mkdir" => {
+                if args.len() == 1 {
+                    Ok(Command::Mkdir(args[0].clone()))
+                } else {
+                    Err(anyhow!("Mkdir command requires an argument"))
+                }
             }
             "echo" => {
                 if args.len() >= 1 {
